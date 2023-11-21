@@ -76,14 +76,14 @@ if __name__ == '__main__':
     ])
 
     # Create an environment maze
-    env = mz.Maze(maze)
-    env.show()
+    env = mz.Maze(maze, minotaur_stay=True)
+    # env.show()
 
     # Finite horizon
     horizon = 20
 
     # minotaur_path = mz.minotaur.random_path(env,horizon)
-    mz.MINOTAUR_STAY = False
+    # mz.MINOTAUR_STAY = True
 
    
 
@@ -93,7 +93,8 @@ if __name__ == '__main__':
 
     p = np.zeros((20,1))
     V, policy= mz.dynamic_programming(env,horizon);
-    demo_policy(env, policy)
+    # demo_policy(env, policy)
+
     # success_cnt = 0
 
     # for _ in range(1000):

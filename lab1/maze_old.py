@@ -41,11 +41,10 @@ class Maze:
     MINOTAUR_STAY = False
 
 
-    def __init__(self, maze, minotaur_stay=False, weights=None, random_rewards=False):
+    def __init__(self, maze, weights=None, random_rewards=False):
         """ Constructor of the environment Maze.
         """
         self.maze                     = maze;
-        self.MINOTAUR_STAY            = minotaur_stay;
         self.actions                  = self.__actions();
         self.states, self.map         = self.__states();
         self.minotaur_actions         = self.__minotaur_actions()
@@ -72,8 +71,6 @@ class Maze:
         actions[self.MOVE_RIGHT] = (0, 1);
         actions[self.MOVE_UP]    = (-1,0);
         actions[self.MOVE_DOWN]  = (1,0);
-        if self.MINOTAUR_STAY:
-            actions[self.STAY]   = (0, 0);
         return actions;
 
     def __states(self):
@@ -85,7 +82,7 @@ class Maze:
             for j in range(self.maze.shape[1]):
                 for k in range(self.maze.shape[0]):
                     for l in range(self.maze.shape[1]):
-                        if self.maze[i,j] != 1 :
+                        if self.maze[i,j] != 1  and self.maze[k,l] != 1:
                             states[s] = (i,j,k,l);
                             map[(i,j,k,l)] = s;
                             s += 1;
@@ -100,61 +97,55 @@ class Maze:
             as an indicator whether the action resulted in a wall hit.
         """
         # Is the agent caught? If so, minotaur stays at agent.
-        if self.states[state][0] == self.states[state][2] and self.states[state][1] == self.states[state][3]:
+        if self.__check_caught(state):
             return [state]
         # Compute the future position given current (state, action)
         row = self.states[state][0] + self.actions[action][0]
         col = self.states[state][1] + self.actions[action][1]
-        
-        minotaur_positions = self.__minotaur_move(state)
-
         # Is the future position an impossible one ?
-        hitting_maze_walls =  (row <= -1) or (row >= self.maze.shape[0]) or (col <= -1) or \
-               (col >= self.maze.shape[1]) or (self.maze[row,col] == 1)
-
-        next_states = []
+        hitting_maze_walls =  self.__maze_wall_hit(row, col)
+        # Compute possible future minotaur positions.
+        minotaur_positions = self.__future_minotaur_positions(state)
+        # Based on the impossiblity check return the next state.
         if hitting_maze_walls:
-            # return state;
-            for minotaur_position in minotaur_positions:
-                next_states.append(self.map[(self.states[state][0], self.states[state][1], minotaur_position[0], minotaur_position[1])])
-        
+            return [self.map[(self.states[state][0], self.states[state][1], min_pos[0], min_pos[1])] 
+                    for min_pos in minotaur_positions]
         else:
-            for minotaur_position in minotaur_positions:
-                # if (row,col) == minotaur_position:
-                #     next_states.append(state)
-                # else:
-                next_states.append(self.map[(row, col, minotaur_position[0], minotaur_position[1])])
-        return next_states
+            # print("\n A:", self.actions_names[action], "S", self.states[state], end=" -> ")
+            # for min_pos in minotaur_positions:
+            #     next_s = self.map[(row, col, min_pos[0], min_pos[1])]
+            #     print(self.states[next_s], end=", ")
+            return [self.map[(row, col, min_pos[0], min_pos[1])] for min_pos in minotaur_positions]
         
-    def __minotaur_move(self, state):
-        minotaur_positions = []
-        for action in self.minotaur_actions:
-            row = self.states[state][2] + self.minotaur_actions[action][0];
-            col = self.states[state][3] + self.minotaur_actions[action][1];
-            hitting_maze_walls =  (row == -1) or (row == self.maze.shape[0]) or \
-                              (col == -1) or (col == self.maze.shape[1])
-            if not hitting_maze_walls:
-                minotaur_positions.append((row,col))
-        return minotaur_positions
+    def __check_caught(self, state):
+        row = self.states[state][0]
+        col = self.states[state][1]
+        return row == self.states[state][2] and col == self.states[state][3] and not self.maze[row,col] == 2
     
+    def __future_minotaur_positions(self, state):
         minotaur_positions = list()
         for action in self.minotaur_actions:
             row = self.states[state][2] + self.minotaur_actions[action][0]
             col = self.states[state][3] + self.minotaur_actions[action][1]
-            hitting_maze_walls =  (row <= -1) or (row >= self.maze.shape[0]) or (col <= -1) or (col >= self.maze.shape[1])
-            if not hitting_maze_walls:
+            if not self.__maze_wall_hit(row, col):
                 minotaur_positions.append((row, col))
-            # else:  # Minotaur can go through walls of thickness 1
-            #     row += self.minotaur_actions[action][0]
-            #     col += self.minotaur_actions[action][1]
-            #     hitting_maze_walls =  (row <= -1) or (row >= self.maze.shape[0]) or (col <= -1) or \
-            #     (col >= self.maze.shape[1]) or (self.maze[row,col] == 1)
-            #     if not hitting_maze_walls:
-            #         minotaur_positions.append((row, col))
+            else:  # Minotaur can go through walls of thickness 1
+                row += self.minotaur_actions[action][0]
+                col += self.minotaur_actions[action][1]
+                if not self.__maze_wall_hit(row, col):
+                    minotaur_positions.append((row, col))
         return minotaur_positions
+    
+    def __maze_wall_hit(self, row, col):
+        return (row <= -1) or (row >= self.maze.shape[0]) or (col <= -1) or \
+               (col >= self.maze.shape[1]) or (self.maze[row,col] == 1)
 
 
     def __transitions(self):
+        """ Computes the transition probabilities for every state action pair.
+            :return numpy.tensor transition probabilities: tensor of transition
+            probabilities of dimension S*S*A
+        """
         # Initialize the transition probailities tensor (S,S,A)
         dimensions = (self.n_states,self.n_states,self.n_actions)
         transition_probabilities = np.zeros(dimensions)
@@ -165,7 +156,7 @@ class Maze:
             for a in range(self.n_actions):
                 next_states = self.__move(s,a)
                 for next_s in next_states:
-                    transition_probabilities[next_s, s, a] = 1/len(next_states)
+                    transition_probabilities[next_s, s, a] = 1/len(next_states)  # Minotaur walks random.
         return transition_probabilities
 
     def __rewards(self):
