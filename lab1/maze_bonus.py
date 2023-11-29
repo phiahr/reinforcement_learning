@@ -5,7 +5,7 @@ from IPython import display
 import random
 
 # Implemented methods
-methods = ['DynProg', 'ValIter'];
+methods = ['DynProg', 'ValIter', 'qLearn'];
 
 # Some colours
 LIGHT_RED    = '#FFC4CC';
@@ -39,13 +39,15 @@ class Maze:
     GOAL_REWARD = 0
     IMPOSSIBLE_REWARD = -100
     MINOTAUR_STAY = False
+    MOVE_TO_PLAYER = False
 
 
-    def __init__(self, maze, minotaur_stay=False, weights=None, random_rewards=False):
+    def __init__(self, maze, minotaur_stay=False, move_to_player=False, weights=None, random_rewards=False):
         """ Constructor of the environment Maze.
         """
         self.maze                     = maze;
         self.MINOTAUR_STAY            = minotaur_stay;
+        self.MOVE_TO_PLAYER           = move_to_player;
         self.actions                  = self.__actions();
         self.states, self.map         = self.__states();
         self.minotaur_actions         = self.__minotaur_actions()
@@ -85,10 +87,15 @@ class Maze:
             for j in range(self.maze.shape[1]):
                 for k in range(self.maze.shape[0]):
                     for l in range(self.maze.shape[1]):
-                        if self.maze[i,j] != 1 :
-                            states[s] = (i,j,k,l);
-                            map[(i,j,k,l)] = s;
-                            s += 1;
+                        for key in range(2):
+                            if self.maze[i,j] != 1 :
+                                states[s] = (i,j,k,l,key);
+                                map[(i,j,k,l,key)] = s;
+                                s += 1;
+                        # if self.maze[i,j] != 1 :
+                        #     states[s] = (i,j,k,l);
+                        #     map[(i,j,k,l)] = s;
+                        #     s += 1;
         return states, map
      
     def __minotaur_move(self, state):
@@ -102,6 +109,9 @@ class Maze:
                 minotaur_positions.append((row,col))
         return minotaur_positions
 
+    def move(self, state, action):
+        return self.__move(state, action)
+    
     def __move(self, state, action):
         # Caught by the minotaur
         if self.states[state][0] == self.states[state][2] and self.states[state][1] == self.states[state][3]:
@@ -110,22 +120,27 @@ class Maze:
         # Compute the future position given current (state, action)
         row = self.states[state][0] + self.actions[action][0]
         col = self.states[state][1] + self.actions[action][1]
+        key = self.states[state][4]
         
         minotaur_positions = self.__minotaur_move(state)
+
+
 
         # Is the future position an impossible one ?
         hitting_maze_walls =  (row <= -1) or (row >= self.maze.shape[0]) or (col <= -1) or \
                (col >= self.maze.shape[1]) or (self.maze[row,col] == 1)
 
+        
         next_states = []
         if hitting_maze_walls:
             # return state;
             for minotaur_position in minotaur_positions:
-                next_states.append(self.map[(self.states[state][0], self.states[state][1], minotaur_position[0], minotaur_position[1])])
-        
+                next_states.append(self.map[(self.states[state][0], self.states[state][1], minotaur_position[0], minotaur_position[1], key)])
         else:
+            if self.maze[row, col] == 3:
+                key = 1
             for minotaur_position in minotaur_positions:
-                next_states.append(self.map[(row, col, minotaur_position[0], minotaur_position[1])])
+                next_states.append(self.map[(row, col, minotaur_position[0], minotaur_position[1], key)])
         return next_states
 
     def __transitions(self):
@@ -138,8 +153,23 @@ class Maze:
         for s in range(self.n_states):
             for a in range(self.n_actions):
                 next_states = self.__move(s,a)
-                for next_s in next_states:
-                    transition_probabilities[next_s, s, a] = 1/len(next_states)
+                if self.MOVE_TO_PLAYER:
+                    points = [self.states[s] for s in next_states]
+                    points = np.array(points)
+                    index_of_closest_point = np.argmin(np.linalg.norm(points[:,2:4] - points[:,:2], axis=1))
+                    for index, next_s in enumerate(next_states):
+                        # the minotaur moves with probability 35% towards you and with probability 65% uniformly at random in all directions
+                        if len(next_states)>1:
+                            if index == index_of_closest_point:
+                                transition_probabilities[next_s, s, a] = 0.35
+                            else:
+                                transition_probabilities[next_s, s, a] = (1/(len(next_states)-1))*0.65
+                        else:
+                            transition_probabilities[next_s, s, a] = 1
+                    
+                else:
+                    for next_s in next_states:
+                        transition_probabilities[next_s, s, a] = 1/len(next_states)
         return transition_probabilities
 
     def __rewards(self):
@@ -152,8 +182,11 @@ class Maze:
                 for next_s in next_states:
                     if self.states[s][:2] == self.states[next_s][:2] and a != self.STAY:
                         reward += self.IMPOSSIBLE_REWARD * self.transition_probabilities[next_s, s, a]
-                    # Reward for reaching the exit
-                    elif self.states[s][0:2] == self.states[next_s][0:2] and self.maze[self.states[next_s][0:2]] == 2:
+
+                    if self.maze[self.states[next_s][0:2]] == 3 and self.states[next_s][4] == 0:
+                        reward += self.GOAL_REWARD * self.transition_probabilities[next_s, s, a]
+                    # Reward for reaching the exit with key
+                    elif self.states[s][0:2] == self.states[next_s][0:2] and self.maze[self.states[next_s][0:2]] == 2 and self.states[s][4] == 1:
                         reward += self.GOAL_REWARD * self.transition_probabilities[next_s, s, a]
                     # Reward for taking a step to an empty cell that is not the exit
                     else:
@@ -227,6 +260,46 @@ class Maze:
                 path.append(self.states[next_s])
                 # Update time and state for next iteration
                 t +=1;
+        if method == 'qLearn':
+            # Initialize current state, next state and time
+            t = 1;
+            s = self.map[start];
+            # Add the starting position in the maze to the path
+            path.append(start);
+            # Move to next state given the policy and the current state
+            next_s = self.__move(s,policy[s]);
+            # Add the position in the maze corresponding to the next state
+            # to the path
+
+            # with probability 1/30 the player will die from poison
+            dead_from_poison = False
+            # if random.randint(1,30) == 1:
+            #     dead_from_poison = True
+
+
+            # if not dead_from_poison:
+            next_s = random.choice(next_s)
+            # else:
+            #     next_s = start
+            path.append(self.states[next_s]);
+            # Loop while state is not the goal state
+            while s != next_s and t < 200:
+                # Update state
+                s = next_s;
+                # Move to next state given the policy and the current state
+                if random.randint(1,50) == 1:
+                    dead_from_poison = True
+                    print("dead from poison")
+                    break
+
+                if not dead_from_poison:
+                    next_s = self.__move(s,policy[s]);
+                # Add the position in the maze corresponding to the next state
+                # to the path
+                next_s = random.choice(next_s)
+                path.append(self.states[next_s])
+                # Update time and state for next iteration
+                t +=1;
         return path
 
 
@@ -239,6 +312,55 @@ class Maze:
         print(self.map)
         print('The rewards:')
         print(self.rewards)
+    
+    def __epsilon_greedy_policy(self, Qs, exploration_prob):
+        if np.random.rand() <= exploration_prob:
+            a = random.randrange(self.n_actions)  # choose iid action
+        else:
+            a = np.argmax(Qs)  # choose best action
+        return a
+    
+    def q_learning(self, start=(0, 0, 6, 5, 0), number_episodes=50000, discount_factor=49 / 50,
+                   step_size_exponent=2 / 3, exploration_prob=0.1, exploration_decay=None):
+        # init
+        Q = np.ones((self.n_states, self.n_actions))  # q values per (s,a)
+        N = np.zeros((self.n_states, self.n_actions))  # count visits per (s,a)
+
+        history_V_initial_state = []
+
+        for k in range(1, number_episodes+1):
+            t = 0
+            s = self.map[start]  # reset env
+            last_s = -1
+            if exploration_decay:
+                exploration_prob = 1/k**exploration_decay
+            history_V_initial_state.append(np.max(Q[s, :]))  # V of initial state
+
+            if k % 10000 == 0:
+                print(f"Iteration ", k)
+
+            while last_s != s:  # not self.__check_game_ended(s) and
+                # select action
+                a = self.__epsilon_greedy_policy(Q[s, :], exploration_prob)
+                # observe next state and reward
+                next_s = self.__move(s, a)
+                next_s = random.choice(next_s)
+
+                # update Q with sampled TD error
+                N[s, a] += 1
+                step_size = 1 / (N[s, a] ** step_size_exponent)
+                Q[s, a] += step_size * (self.rewards[s,a] + discount_factor * np.max(Q[next_s, :]) - Q[s, a])
+
+                # print(s, a, reward, next_s, np.argmax(Q[next_s, :]))
+
+                last_s = s
+                s = next_s
+                t += 1
+
+        # V = np.max(Q, axis=1)  # not needed
+        policy = np.argmax(Q, axis=1)
+        return Q, N, policy, history_V_initial_state
+
 
 def dynamic_programming(env, horizon):
     """ Solves the shortest path problem using dynamic programming
@@ -286,6 +408,187 @@ def dynamic_programming(env, horizon):
         # The optimal action is the one that maximizes the Q function
         policy[:,t] = np.argmax(Q,1);
     return V, policy;
+
+def q_learning(env, start, gamma, epsilon, alpha, num_episodes):
+    """ Solves the shortest path problem using value iteration
+        :input Maze env           : The maze environment in which we seek to
+                                    find the shortest path.
+        :input float gamma        : The discount factor.
+        :input float epsilon      : accuracy of the value iteration procedure.
+        :input float alpha        : learning rate
+        :input int num_episodes   : number of episodes
+        :return numpy.array V     : Optimal values for every state at every
+                                    time, dimension S*T
+        :return numpy.array policy: Optimal time-varying policy at every state,
+                                    dimension S*T
+    """
+    # The value itearation algorithm requires the knowledge of :
+    # - Transition probabilities
+    # - Rewards
+    # - State space
+    # - Action space
+    # - The finite horizon
+    p         = env.transition_probabilities;
+    r         = env.rewards;
+    n_states  = env.n_states;
+    n_actions = env.n_actions;
+
+    # Required variables and temporary ones for the VI to run
+    V   = np.zeros(n_states);
+    Q   = np.zeros((n_states, n_actions));
+    BV  = np.zeros(n_states);
+    # Iteration counter
+    n   = 0;
+    # Tolerance error
+    # tol = (1 - gamma)* epsilon/gamma;
+    # s = env.map(start)
+    # print(s)
+    # print(env.map[s])
+    # print(env.states[env.map[s]])
+
+    Vs = []
+    n_visits = np.zeros((n_states, n_actions))
+    for _ in range(num_episodes):
+        t = 0
+        s = env.map[start]
+
+        Vs.append(np.max(Q[s, :]))
+
+        if n % 10000 == 0:
+            print(f"Iteration ", n)
+
+        # epsilon greedy policy
+        if random.uniform(0,1) < epsilon:
+            a = random.randint(0,4)
+        else:
+            a = np.argmax(Q[s,:])
+        prev_s = s
+        while prev_s != s and t < 200:
+            if t == 199:
+                print("T")
+            V = np.copy(BV);
+            
+            # if env.states[s][0:2] == (6,5) and env.states[s][4] == 1:
+            #     # print("success")
+            #     # exit()
+            #     break
+            # elif env.states[s][0:2] == env.states[s][2:4]:
+            #     # print("lost")
+            #     # exit()
+            #     break
+            # else:
+            # epsilon greedy policy
+            if random.uniform(0,1) < epsilon:
+                a = random.randint(0,4)
+            else:
+                a = np.argmax(Q[s,:])
+            
+            
+            next_states = env.move(s,a)
+            # next_states = env.__move()
+            next_s = random.choice(next_states)
+            n_visits[s,a] += 1
+            step_size = 1/(n_visits[s,a]**(2/3))
+
+
+            Q[s, a] = Q[s, a] + step_size * (r[s, a] + gamma*np.max(Q[next_s,:]) - Q[s, a])
+        
+            t += 1
+            s = next_s
+            prev_s = s
+            BV = np.max(Q, 1);
+        n += 1
+    # Compute policy
+    policy = np.argmax(Q,1);
+    # Return the obtained policy
+    return V, policy, Vs, Q;
+
+
+
+def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
+    """ Solves the shortest path problem using value iteration
+        :input Maze env           : The maze environment in which we seek to
+                                    find the shortest path.
+        :input float gamma        : The discount factor.
+        :input float epsilon      : accuracy of the value iteration procedure.
+        :input float alpha        : learning rate
+        :input int num_episodes   : number of episodes
+        :return numpy.array V     : Optimal values for every state at every
+                                    time, dimension S*T
+        :return numpy.array policy: Optimal time-varying policy at every state,
+                                    dimension S*T
+    """
+    # The value itearation algorithm requires the knowledge of :
+    # - Transition probabilities
+    # - Rewards
+    # - State space
+    # - Action space
+    # - The finite horizon
+    p         = env.transition_probabilities;
+    r         = env.rewards;
+    n_states  = env.n_states;
+    n_actions = env.n_actions;
+
+    # Required variables and temporary ones for the VI to run
+    V   = np.zeros(n_states);
+    Q   = np.zeros((n_states, n_actions));
+    BV  = np.zeros(n_states);
+    # Iteration counter
+    n   = 0
+    Vs = []
+    n_visits = np.zeros((n_states, n_actions))
+    for _ in range(num_episodes):
+        t = 0
+        s = env.map[start]
+
+        Vs.append(np.max(Q[s, :]))
+
+        if n % 10000 == 0:
+            print(f"Iteration ", n)
+
+        # epsilon greedy policy
+        if random.uniform(0,1) < epsilon:
+            a = random.randint(0,4)
+        else:
+            a = np.argmax(Q[s,:])
+
+        while t < 200:
+            V = np.copy(BV);
+            
+            if env.states[s][0:2] == (6,5) and env.states[s][4] == 1:
+                # print("success")
+                # exit()
+                break
+            elif env.states[s][0:2] == env.states[s][2:4]:
+                # print("lost")
+                # exit()
+                break
+            else:
+                next_states = env.move(s,a)
+                # next_states = env.__move()
+                next_s = random.choice(next_states)
+                
+                # epsilon greedy policy
+                if random.uniform(0,1) < epsilon:
+                    next_a = random.randint(0,4)
+                else:
+                    next_a = np.argmax(Q[s,:])
+                
+                n_visits[s,a] += 1
+                step_size = 1/(n_visits[s,a]**(1/2))
+
+
+                Q[s, a] = Q[s, a] + step_size * (r[s, a] + gamma*np.max(Q[next_s,next_a]) - Q[s, a])
+        
+            t += 1
+            s = next_s
+            a = next_a
+            BV = np.max(Q, 1);
+        n += 1
+    # Compute policy
+    policy = np.argmax(Q,1);
+    # Return the obtained policy
+    return V, policy, Vs, Q;
 
 def value_iteration(env, gamma, epsilon):
     """ Solves the shortest path problem using value iteration
@@ -380,10 +683,10 @@ def draw_maze(maze):
         cell.set_height(1.0/rows);
         cell.set_width(1.0/cols);
 
-def animate_solution(maze, path, minotaur_path):
+def animate_solution(maze, path):
 
     # Map a color to each cell in the maze
-    col_map = {0: WHITE, 1: BLACK, 2: LIGHT_GREEN, -6: LIGHT_RED, -1: LIGHT_RED};
+    col_map = {0: WHITE, 1: BLACK, 2: LIGHT_GREEN, -6: LIGHT_RED, -1: LIGHT_RED, 3: LIGHT_PURPLE};
 
     # Size of the maze
     rows,cols = maze.shape;
@@ -419,27 +722,29 @@ def animate_solution(maze, path, minotaur_path):
 
     # Update the color at each frame
     for i in range(len(path)):
-        grid.get_celld()[(path[i])].set_facecolor(LIGHT_ORANGE)
-        grid.get_celld()[(path[i])].get_text().set_text('Player')
-        grid.get_celld()[(minotaur_path[i])].set_facecolor(RED)
-        grid.get_celld()[(minotaur_path[i])].get_text().set_text('Minotaur')
+        grid.get_celld()[(path[i][:2])].set_facecolor(LIGHT_ORANGE)
+        grid.get_celld()[(path[i][:2])].get_text().set_text('Player')
+        grid.get_celld()[(path[i][2:4])].set_facecolor(RED)
+        grid.get_celld()[(path[i][2:4])].get_text().set_text('Minotaur')
         
         if i > 0:
-            if path[i] == path[i-1]:
-                grid.get_celld()[(path[i])].set_facecolor(LIGHT_GREEN)
-                grid.get_celld()[(path[i])].get_text().set_text('Player is out')
-                grid.get_celld()[(minotaur_path[i-1])].set_facecolor(col_map[maze[minotaur_path[i-1]]])
-                grid.get_celld()[(minotaur_path[i-1])].get_text().set_text('')
+            if path[i][:2] == path[i-1][:2] and path[i][4] == 1:
+                grid.get_celld()[(path[i][:2])].set_facecolor(LIGHT_GREEN)
+                grid.get_celld()[(path[i][:2])].get_text().set_text('Player is out')
+                grid.get_celld()[(path[i][2:4])].set_facecolor(col_map[maze[path[i][2:4]]])
+                grid.get_celld()[(path[i][2:4])].get_text().set_text('')
                 
             else:
-                grid.get_celld()[(path[i-1])].set_facecolor(col_map[maze[path[i-1]]])
-                grid.get_celld()[(path[i-1])].get_text().set_text('')
-                if minotaur_path[i] == minotaur_path[i-1]:
-                    grid.get_celld()[(minotaur_path[i])].set_facecolor(RED)
-                    grid.get_celld()[(minotaur_path[i])].get_text().set_text('Minotaur')
-                else:
-                    grid.get_celld()[(minotaur_path[i-1])].set_facecolor(col_map[maze[minotaur_path[i-1]]])
-                    grid.get_celld()[(minotaur_path[i-1])].get_text().set_text('')
+                grid.get_celld()[(path[i-1][:2])].set_facecolor(col_map[maze[path[i-1][:2]]])
+                grid.get_celld()[(path[i-1][:2])].get_text().set_text('')
+                grid.get_celld()[(path[i-1][2:4])].set_facecolor(col_map[maze[path[i-1][2:4]]])
+                grid.get_celld()[(path[i-1][2:4])].get_text().set_text('')
+                # if minotaur_path[i] == minotaur_path[i-1]:
+                #     grid.get_celld()[(minotaur_path[i])].set_facecolor(RED)
+                #     grid.get_celld()[(minotaur_path[i])].get_text().set_text('Minotaur')
+                # else:
+                #     grid.get_celld()[(minotaur_path[i-1])].set_facecolor(col_map[maze[minotaur_path[i-1]]])
+                #     grid.get_celld()[(minotaur_path[i-1])].get_text().set_text('')
         display.display(fig)
         display.clear_output(wait=True)
         time.sleep(1)
