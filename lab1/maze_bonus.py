@@ -165,8 +165,7 @@ class Maze:
                             else:
                                 transition_probabilities[next_s, s, a] = (1/(len(next_states)-1))*0.65
                         else:
-                            transition_probabilities[next_s, s, a] = 1
-                    
+                            transition_probabilities[next_s, s, a] = 1                    
                 else:
                     for next_s in next_states:
                         transition_probabilities[next_s, s, a] = 1/len(next_states)
@@ -267,7 +266,7 @@ class Maze:
             # Add the starting position in the maze to the path
             path.append(start);
             # Move to next state given the policy and the current state
-            next_s = self.__move(s,policy[s]);
+            next_states = self.__move(s,policy[s]);
             # Add the position in the maze corresponding to the next state
             # to the path
 
@@ -278,29 +277,86 @@ class Maze:
 
 
             # if not dead_from_poison:
-            next_s = random.choice(next_s)
+            # walk 0.35 towards player
+            if self.MOVE_TO_PLAYER:
+                points = [self.states[s] for s in next_states]
+                points = np.array(points)
+                index_of_closest_point = np.argmin(np.linalg.norm(points[:,2:4] - points[:,:2], axis=1))
+
+                # print(test)
+                det_state = next_states[index_of_closest_point]
+                next_states.pop(index_of_closest_point)
+                # next_s = random.choices[test]
+                if random.random() <= 0.35:
+                    next_s = det_state
+                else:
+                    next_s = random.choice(next_states)
+                # for index, next_s in enumerate(next_states):
+                    # the minotaur moves with probability 35% towards you and with probability 65% uniformly at random in all directions
+                    # if len(next_states)>1:
+                    #     if index == index_of_closest_point:
+                    #         transition_probabilities[next_s, s, a] = 0.35
+                    #     else:
+                    #         transition_probabilities[next_s, s, a] = (1/(len(next_states)-1))*0.65
+                    # else:
+                    #     transition_probabilities[next_s, s, a] = 1
+            else:
+                next_s = random.choice(next_states)
+            # next_s = random.choices(next_s, weights=)
             # else:
             #     next_s = start
             path.append(self.states[next_s]);
             # Loop while state is not the goal state
+            t_death = 50
+            distribution = np.arange(50)
             while s != next_s and t < 200:
                 # Update state
                 s = next_s;
                 # Move to next state given the policy and the current state
-                if random.randint(1,50) == 1:
+                # if random.randint(1,50) == 1:
+                if np.random.random() < 1/50:
+                # if random.random() <= 0.005:
+                # if random.choice(distribution) == 0:
                     dead_from_poison = True
-                    print("dead from poison")
+                    t_death = t
+                #     print("dead from poison")
                     break
 
                 if not dead_from_poison:
-                    next_s = self.__move(s,policy[s]);
+                    next_states = self.__move(s,policy[s]);
                 # Add the position in the maze corresponding to the next state
                 # to the path
-                next_s = random.choice(next_s)
+                if self.MOVE_TO_PLAYER:
+                    points = [self.states[s] for s in next_states]
+                    points = np.array(points)
+                    index_of_closest_point = np.argmin(np.linalg.norm(points[:,2:4] - points[:,:2], axis=1))
+
+                    # print(test)
+                    det_state = next_states[index_of_closest_point]
+                    if len(next_states) > 1:
+                        next_states.pop(index_of_closest_point)
+                    # next_s = random.choices[test]
+                    if random.random() <= 0.35:
+                        next_s = det_state
+                    else:
+                        next_s = random.choice(next_states)
+                    # for index, next_s in enumerate(next_states):
+                        # the minotaur moves with probability 35% towards you and with probability 65% uniformly at random in all directions
+                        # if len(next_states)>1:
+                        #     if index == index_of_closest_point:
+                        #         transition_probabilities[next_s, s, a] = 0.35
+                        #     else:
+                        #         transition_probabilities[next_s, s, a] = (1/(len(next_states)-1))*0.65
+                        # else:
+                        #     transition_probabilities[next_s, s, a] = 1
+                else:
+                    next_s = random.choice(next_states)
+                
                 path.append(self.states[next_s])
                 # Update time and state for next iteration
                 t +=1;
-        return path
+        
+        return path, t_death
 
 
     def show(self):
@@ -312,55 +368,22 @@ class Maze:
         print(self.map)
         print('The rewards:')
         print(self.rewards)
-    
-    def __epsilon_greedy_policy(self, Qs, exploration_prob):
-        if np.random.rand() <= exploration_prob:
-            a = random.randrange(self.n_actions)  # choose iid action
+
+    def choose_state(self, states, next_states):
+        points = [states[s] for s in next_states]
+        points = np.array(points)
+        index_of_closest_point = np.argmin(np.linalg.norm(points[:,2:4] - points[:,:2], axis=1))
+
+        # print(test)
+        det_state = next_states[index_of_closest_point]
+        if len(next_states) > 1:
+            next_states.pop(index_of_closest_point)
+        # next_s = random.choices[test]
+        if random.random() <= 0.35:
+            next_s = det_state
         else:
-            a = np.argmax(Qs)  # choose best action
-        return a
-    
-    def q_learning(self, start=(0, 0, 6, 5, 0), number_episodes=50000, discount_factor=49 / 50,
-                   step_size_exponent=2 / 3, exploration_prob=0.1, exploration_decay=None):
-        # init
-        Q = np.ones((self.n_states, self.n_actions))  # q values per (s,a)
-        N = np.zeros((self.n_states, self.n_actions))  # count visits per (s,a)
-
-        history_V_initial_state = []
-
-        for k in range(1, number_episodes+1):
-            t = 0
-            s = self.map[start]  # reset env
-            last_s = -1
-            if exploration_decay:
-                exploration_prob = 1/k**exploration_decay
-            history_V_initial_state.append(np.max(Q[s, :]))  # V of initial state
-
-            if k % 10000 == 0:
-                print(f"Iteration ", k)
-
-            while last_s != s:  # not self.__check_game_ended(s) and
-                # select action
-                a = self.__epsilon_greedy_policy(Q[s, :], exploration_prob)
-                # observe next state and reward
-                next_s = self.__move(s, a)
-                next_s = random.choice(next_s)
-
-                # update Q with sampled TD error
-                N[s, a] += 1
-                step_size = 1 / (N[s, a] ** step_size_exponent)
-                Q[s, a] += step_size * (self.rewards[s,a] + discount_factor * np.max(Q[next_s, :]) - Q[s, a])
-
-                # print(s, a, reward, next_s, np.argmax(Q[next_s, :]))
-
-                last_s = s
-                s = next_s
-                t += 1
-
-        # V = np.max(Q, axis=1)  # not needed
-        policy = np.argmax(Q, axis=1)
-        return Q, N, policy, history_V_initial_state
-
+            next_s = random.choice(next_states)
+        return next_s
 
 def dynamic_programming(env, horizon):
     """ Solves the shortest path problem using dynamic programming
@@ -409,6 +432,8 @@ def dynamic_programming(env, horizon):
         policy[:,t] = np.argmax(Q,1);
     return V, policy;
 
+
+
 def q_learning(env, start, gamma, epsilon, alpha, num_episodes):
     """ Solves the shortest path problem using value iteration
         :input Maze env           : The maze environment in which we seek to
@@ -438,23 +463,16 @@ def q_learning(env, start, gamma, epsilon, alpha, num_episodes):
     Q   = np.zeros((n_states, n_actions));
     BV  = np.zeros(n_states);
     # Iteration counter
-    n   = 0;
-    # Tolerance error
-    # tol = (1 - gamma)* epsilon/gamma;
-    # s = env.map(start)
-    # print(s)
-    # print(env.map[s])
-    # print(env.states[env.map[s]])
 
     Vs = []
     n_visits = np.zeros((n_states, n_actions))
-    for _ in range(num_episodes):
+    for n in range(num_episodes):
         t = 0
         s = env.map[start]
 
         Vs.append(np.max(Q[s, :]))
 
-        if n % 10000 == 0:
+        if n % 1000 == 0:
             print(f"Iteration ", n)
 
         # epsilon greedy policy
@@ -462,10 +480,10 @@ def q_learning(env, start, gamma, epsilon, alpha, num_episodes):
             a = random.randint(0,4)
         else:
             a = np.argmax(Q[s,:])
-        prev_s = s
-        while prev_s != s and t < 200:
-            if t == 199:
-                print("T")
+        prev_s = -1
+        while t < 200:
+            # if t == 199:
+            #     print("T")
             V = np.copy(BV);
             
             # if env.states[s][0:2] == (6,5) and env.states[s][4] == 1:
@@ -476,34 +494,44 @@ def q_learning(env, start, gamma, epsilon, alpha, num_episodes):
             #     # print("lost")
             #     # exit()
             #     break
-            # else:
+            
+            # if True:
             # epsilon greedy policy
             if random.uniform(0,1) < epsilon:
                 a = random.randint(0,4)
             else:
                 a = np.argmax(Q[s,:])
             
-            
+        
             next_states = env.move(s,a)
             # next_states = env.__move()
-            next_s = random.choice(next_states)
+            # next_s = random.choice(next_states)
+            next_s = env.choose_state(env.states, next_states)
             n_visits[s,a] += 1
-            step_size = 1/(n_visits[s,a]**(2/3))
+            step_size = 1/(n_visits[s,a]**alpha)
 
 
             Q[s, a] = Q[s, a] + step_size * (r[s, a] + gamma*np.max(Q[next_s,:]) - Q[s, a])
         
+           
+            BV = np.max(Q, 1)
+            # print(env.states[s][0:2])
+            if env.maze[env.states[s][0:2]] == 2 and env.states[s][4] == 1:
+                # print(Q[env.map[start],:])
+                # print("success")
+                # exit()
+                break
+            elif env.states[s][0:2] == env.states[s][2:4]:
+                # print("lost")
+                # exit()
+                break
             t += 1
-            s = next_s
             prev_s = s
-            BV = np.max(Q, 1);
-        n += 1
+            s = next_s
     # Compute policy
     policy = np.argmax(Q,1);
     # Return the obtained policy
     return V, policy, Vs, Q;
-
-
 
 def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
     """ Solves the shortest path problem using value iteration
@@ -534,16 +562,16 @@ def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
     Q   = np.zeros((n_states, n_actions));
     BV  = np.zeros(n_states);
     # Iteration counter
-    n   = 0
+
     Vs = []
     n_visits = np.zeros((n_states, n_actions))
-    for _ in range(num_episodes):
+    for n in range(num_episodes):
         t = 0
         s = env.map[start]
 
         Vs.append(np.max(Q[s, :]))
 
-        if n % 10000 == 0:
+        if n % 1000 == 0:
             print(f"Iteration ", n)
 
         # epsilon greedy policy
@@ -551,44 +579,140 @@ def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
             a = random.randint(0,4)
         else:
             a = np.argmax(Q[s,:])
-
+        prev_s = -1
         while t < 200:
-            V = np.copy(BV);
-            
-            if env.states[s][0:2] == (6,5) and env.states[s][4] == 1:
-                # print("success")
-                # exit()
+            # epsilon greedy policy
+            if random.uniform(0,1) < epsilon:
+                a = random.randint(0,4)
+            else:
+                a = np.argmax(Q[s,:])
+        
+            next_states = env.move(s,a)
+            # next_states = env.__move()
+            next_s = random.choice(next_states)
+
+            if random.uniform(0,1) < epsilon:
+                next_a = random.randint(0,4)
+            else:
+                next_a = np.argmax(Q[next_s,:])
+
+            n_visits[s,a] += 1
+            step_size = 1/(n_visits[s,a]**alpha)
+
+            Q[s, a] = Q[s, a] + step_size * (r[s, a] + gamma*Q[next_s,next_a] - Q[s, a])
+        
+            if env.maze[env.states[s][0:2]] == 2 and env.states[s][4] == 1:
                 break
             elif env.states[s][0:2] == env.states[s][2:4]:
-                # print("lost")
-                # exit()
                 break
-            else:
-                next_states = env.move(s,a)
-                # next_states = env.__move()
-                next_s = random.choice(next_states)
-                
-                # epsilon greedy policy
-                if random.uniform(0,1) < epsilon:
-                    next_a = random.randint(0,4)
-                else:
-                    next_a = np.argmax(Q[s,:])
-                
-                n_visits[s,a] += 1
-                step_size = 1/(n_visits[s,a]**(1/2))
-
-
-                Q[s, a] = Q[s, a] + step_size * (r[s, a] + gamma*np.max(Q[next_s,next_a]) - Q[s, a])
-        
             t += 1
+            prev_s = s
             s = next_s
             a = next_a
-            BV = np.max(Q, 1);
-        n += 1
     # Compute policy
     policy = np.argmax(Q,1);
     # Return the obtained policy
     return V, policy, Vs, Q;
+
+# def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
+#     """ Solves the shortest path problem using value iteration
+#         :input Maze env           : The maze environment in which we seek to
+#                                     find the shortest path.
+#         :input float gamma        : The discount factor.
+#         :input float epsilon      : accuracy of the value iteration procedure.
+#         :input float alpha        : learning rate
+#         :input int num_episodes   : number of episodes
+#         :return numpy.array V     : Optimal values for every state at every
+#                                     time, dimension S*T
+#         :return numpy.array policy: Optimal time-varying policy at every state,
+#                                     dimension S*T
+#     """
+#     # The value itearation algorithm requires the knowledge of :
+#     # - Transition probabilities
+#     # - Rewards
+#     # - State space
+#     # - Action space
+#     # - The finite horizon
+#     p         = env.transition_probabilities;
+#     r         = env.rewards;
+#     n_states  = env.n_states;
+#     n_actions = env.n_actions;
+#     print(n_actions)
+
+#     # Required variables and temporary ones for the VI to run
+#     V   = np.zeros(n_states);
+#     Q   = np.zeros((n_states, n_actions));
+#     BV  = np.zeros(n_states);
+#     # Iteration counter
+#     n   = 0
+#     Vs = []
+#     n_visits = np.zeros((n_states, n_actions))
+#     for _ in range(num_episodes):
+#         t = 0
+#         s = env.map[start]
+
+#         Vs.append(np.max(Q[s, :]))
+
+#         if n % 10000 == 0:
+#             print(f"Iteration ", n)
+
+#         # epsilon greedy policy
+#         if random.uniform(0,1) < epsilon:
+#             a = random.randint(0,4)
+#         else:
+#             a = np.argmax(Q[s,:])
+#         prev_s = -1
+#         # while True:
+#         while t < 200:
+#             V = np.copy(BV);
+            
+#             # if env.states[s][0:2] == (6,5) and env.states[s][4] == 1:
+#             #     # print("success")
+#             #     # exit()
+#             #     break
+#             # elif env.states[s][0:2] == env.states[s][2:4]:
+#             #     # print("lost")
+#             #     # exit()
+#             #     break
+#             # if prev_s == s:
+#             #     print("break", env.states[s])
+#             #     break
+#             # else:
+#             next_states = env.move(s,a)
+#             # next_states = env.__move()
+#             next_s = random.choice(next_states)
+            
+#             # epsilon greedy policy
+#             if random.uniform(0,1) < epsilon:
+#                 next_a = random.randint(0,4)
+#             else:
+#                 next_a = np.argmax(Q[s,:])
+            
+#             n_visits[s,a] += 1
+#             step_size = 1/(n_visits[s,a]**(2/3))
+
+#             Q[s, a] = Q[s, a] + step_size * (r[s, a] + gamma*Q[next_s,next_a] - Q[s, a])
+
+#             if env.maze[env.states[s][0:2]] == 2 and env.states[s][4] == 1:
+#                 # print(Q[env.map[start],:])
+#                 # print("success")
+#                 # exit()
+#                 break
+#             elif env.states[s][0:2] == env.states[s][2:4]:
+#                 # print("lost")
+#                 # exit()
+#                 break
+        
+#             t += 1
+#             prev_s = s
+#             s = next_s
+#             a = next_a
+#             BV = np.max(Q, 1);
+#         n += 1
+#     # Compute policy
+#     policy = np.argmax(Q,1);
+#     # Return the obtained policy
+#     return V, policy, Vs, Q;
 
 def value_iteration(env, gamma, epsilon):
     """ Solves the shortest path problem using value iteration
@@ -733,7 +857,9 @@ def animate_solution(maze, path):
                 grid.get_celld()[(path[i][:2])].get_text().set_text('Player is out')
                 grid.get_celld()[(path[i][2:4])].set_facecolor(col_map[maze[path[i][2:4]]])
                 grid.get_celld()[(path[i][2:4])].get_text().set_text('')
-                
+            elif path[i][:2] == path[i-1][:2]:
+                # grid.get_celld()[(path[i][2:4])].set_facecolor(col_map[maze[path[i][2:4]]])
+                grid.get_celld()[(path[i][2:4])].get_text().set_text('Wait')
             else:
                 grid.get_celld()[(path[i-1][:2])].set_facecolor(col_map[maze[path[i-1][:2]]])
                 grid.get_celld()[(path[i-1][:2])].get_text().set_text('')

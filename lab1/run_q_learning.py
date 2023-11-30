@@ -76,7 +76,7 @@ if __name__ == '__main__':
     ])
 
     # Create an environment maze
-    env = mz.Maze(maze, minotaur_stay=False)
+    env = mz.Maze(maze, minotaur_stay=False, move_to_player=True)
     # env.show()
 
     # Finite horizon
@@ -91,8 +91,19 @@ if __name__ == '__main__':
     start  = (0,0,6,5,0);
 
     # V, policy= mz.dynamic_programming(env,horizon);
-    V, policy, Vs, Q = mz.q_learning(env, start, gamma= 49/50, alpha=0.6, epsilon=0.1, num_episodes=50000);
-    mz.animate_solution(maze, policy)
+    V, policy, Vs, Q = mz.q_learning(env, start, gamma= 49/50, epsilon=0.1, alpha=0.6, num_episodes=50000);
+    # mz.animate_solution(maze, policy)
+    success_cnt = 0
+    print(policy)
+    for _ in range(50000):
+        path = env.simulate(start, policy, method);
+        if path[-1][0:2] == (6,5):
+            success_cnt += 1
+    print(success_cnt/5e4)
+    plt.plot(range(len(Vs[:])), Vs[:], label=f"Exploration={0.1}")
+    plt.show()
+    print("V:", V[env.map[start]])
+    print("Q:", Q[env.map[start],:])
     exit()
     V2, policy2, Vs2, Q2 = mz.q_learning(env, start, gamma= 49/50, alpha=0.6, epsilon=0.05, num_episodes=50000);
     print(V)
