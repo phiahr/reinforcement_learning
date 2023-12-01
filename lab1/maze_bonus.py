@@ -1,8 +1,14 @@
+# Authors: 
+# * Oscar Eriksson, 0011301991, oscer@kth.se
+# * Philip Ahrendt, 960605R119, pcah@kth.se
+
 import numpy as np
 import matplotlib.pyplot as plt
 import time
 from IPython import display
 import random
+from tqdm import tqdm
+
 
 # Implemented methods
 methods = ['DynProg', 'ValIter', 'qLearn'];
@@ -116,6 +122,8 @@ class Maze:
         # Caught by the minotaur
         if self.states[state][0] == self.states[state][2] and self.states[state][1] == self.states[state][3]:
             return [state]
+        if self.maze[self.states[state][0:2]] == 2:
+            return [state]
 
         # Compute the future position given current (state, action)
         row = self.states[state][0] + self.actions[action][0]
@@ -181,7 +189,8 @@ class Maze:
                 for next_s in next_states:
                     if self.states[s][:2] == self.states[next_s][:2] and a != self.STAY:
                         reward += self.IMPOSSIBLE_REWARD * self.transition_probabilities[next_s, s, a]
-
+                    if self.states[s][:2] == self.states[s][2:4]:
+                        reward += self.IMPOSSIBLE_REWARD * self.transition_probabilities[next_s, s, a]
                     if self.maze[self.states[next_s][0:2]] == 3 and self.states[next_s][4] == 0:
                         reward += self.GOAL_REWARD * self.transition_probabilities[next_s, s, a]
                     # Reward for reaching the exit with key
@@ -200,6 +209,8 @@ class Maze:
 
         path = list();
         if method == 'DynProg':
+
+            t_death = 50
             # Deduce the horizon from the policy shape
             horizon = policy.shape[1];
             # Initialize current state and time
@@ -317,10 +328,10 @@ class Maze:
                 if np.random.random() < 1/50:
                 # if random.random() <= 0.005:
                 # if random.choice(distribution) == 0:
-                    dead_from_poison = True
+                    # dead_from_poison = True
                     t_death = t
                 #     print("dead from poison")
-                    break
+                    # break
 
                 if not dead_from_poison:
                     next_states = self.__move(s,policy[s]);
@@ -340,15 +351,6 @@ class Maze:
                         next_s = det_state
                     else:
                         next_s = random.choice(next_states)
-                    # for index, next_s in enumerate(next_states):
-                        # the minotaur moves with probability 35% towards you and with probability 65% uniformly at random in all directions
-                        # if len(next_states)>1:
-                        #     if index == index_of_closest_point:
-                        #         transition_probabilities[next_s, s, a] = 0.35
-                        #     else:
-                        #         transition_probabilities[next_s, s, a] = (1/(len(next_states)-1))*0.65
-                        # else:
-                        #     transition_probabilities[next_s, s, a] = 1
                 else:
                     next_s = random.choice(next_states)
                 
@@ -434,7 +436,7 @@ def dynamic_programming(env, horizon):
 
 
 
-def q_learning(env, start, gamma, epsilon, alpha, num_episodes):
+def q_learning(env, start, gamma, epsilon, alpha, num_episodes, Q_Hot = None):
     """ Solves the shortest path problem using value iteration
         :input Maze env           : The maze environment in which we seek to
                                     find the shortest path.
@@ -448,60 +450,39 @@ def q_learning(env, start, gamma, epsilon, alpha, num_episodes):
                                     dimension S*T
     """
     # The value itearation algorithm requires the knowledge of :
-    # - Transition probabilities
     # - Rewards
     # - State space
     # - Action space
     # - The finite horizon
-    p         = env.transition_probabilities;
     r         = env.rewards;
     n_states  = env.n_states;
     n_actions = env.n_actions;
 
     # Required variables and temporary ones for the VI to run
     V   = np.zeros(n_states);
-    Q   = np.zeros((n_states, n_actions));
-    BV  = np.zeros(n_states);
-    # Iteration counter
-
+    if Q_Hot is None:
+        Q = np.zeros((n_states, n_actions));
+    else:
+        Q = Q_Hot
     Vs = []
     n_visits = np.zeros((n_states, n_actions))
-    for n in range(num_episodes):
+    for n in tqdm(range(num_episodes)):
         t = 0
         s = env.map[start]
 
         Vs.append(np.max(Q[s, :]))
-
-        if n % 1000 == 0:
-            print(f"Iteration ", n)
 
         # epsilon greedy policy
         if random.uniform(0,1) < epsilon:
             a = random.randint(0,4)
         else:
             a = np.argmax(Q[s,:])
-        prev_s = -1
         while t < 200:
-            # if t == 199:
-            #     print("T")
-            V = np.copy(BV);
-            
-            # if env.states[s][0:2] == (6,5) and env.states[s][4] == 1:
-            #     # print("success")
-            #     # exit()
-            #     break
-            # elif env.states[s][0:2] == env.states[s][2:4]:
-            #     # print("lost")
-            #     # exit()
-            #     break
-            
-            # if True:
             # epsilon greedy policy
             if random.uniform(0,1) < epsilon:
                 a = random.randint(0,4)
             else:
                 a = np.argmax(Q[s,:])
-            
         
             next_states = env.move(s,a)
             # next_states = env.__move()
@@ -510,30 +491,21 @@ def q_learning(env, start, gamma, epsilon, alpha, num_episodes):
             n_visits[s,a] += 1
             step_size = 1/(n_visits[s,a]**alpha)
 
-
             Q[s, a] = Q[s, a] + step_size * (r[s, a] + gamma*np.max(Q[next_s,:]) - Q[s, a])
-        
            
-            BV = np.max(Q, 1)
-            # print(env.states[s][0:2])
             if env.maze[env.states[s][0:2]] == 2 and env.states[s][4] == 1:
-                # print(Q[env.map[start],:])
-                # print("success")
-                # exit()
                 break
             elif env.states[s][0:2] == env.states[s][2:4]:
-                # print("lost")
-                # exit()
                 break
             t += 1
-            prev_s = s
             s = next_s
+            V = np.max(Q, 1)
     # Compute policy
     policy = np.argmax(Q,1);
     # Return the obtained policy
     return V, policy, Vs, Q;
 
-def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
+def sarsa(env, start, gamma, epsilon, alpha, num_episodes, decreasing_epsilon=False):
     """ Solves the shortest path problem using value iteration
         :input Maze env           : The maze environment in which we seek to
                                     find the shortest path.
@@ -547,12 +519,10 @@ def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
                                     dimension S*T
     """
     # The value itearation algorithm requires the knowledge of :
-    # - Transition probabilities
     # - Rewards
     # - State space
     # - Action space
     # - The finite horizon
-    p         = env.transition_probabilities;
     r         = env.rewards;
     n_states  = env.n_states;
     n_actions = env.n_actions;
@@ -560,19 +530,18 @@ def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
     # Required variables and temporary ones for the VI to run
     V   = np.zeros(n_states);
     Q   = np.zeros((n_states, n_actions));
-    BV  = np.zeros(n_states);
     # Iteration counter
 
     Vs = []
     n_visits = np.zeros((n_states, n_actions))
-    for n in range(num_episodes):
+    for n in tqdm(range(num_episodes)):
         t = 0
         s = env.map[start]
+        
+        if decreasing_epsilon and n > 0:
+            epsilon = 1/n**0.55
 
         Vs.append(np.max(Q[s, :]))
-
-        if n % 1000 == 0:
-            print(f"Iteration ", n)
 
         # epsilon greedy policy
         if random.uniform(0,1) < epsilon:
@@ -606,113 +575,13 @@ def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
             elif env.states[s][0:2] == env.states[s][2:4]:
                 break
             t += 1
-            prev_s = s
             s = next_s
             a = next_a
+            V = np.max(Q,1)
     # Compute policy
     policy = np.argmax(Q,1);
     # Return the obtained policy
     return V, policy, Vs, Q;
-
-# def sarsa(env, start, gamma, epsilon, alpha, num_episodes):
-#     """ Solves the shortest path problem using value iteration
-#         :input Maze env           : The maze environment in which we seek to
-#                                     find the shortest path.
-#         :input float gamma        : The discount factor.
-#         :input float epsilon      : accuracy of the value iteration procedure.
-#         :input float alpha        : learning rate
-#         :input int num_episodes   : number of episodes
-#         :return numpy.array V     : Optimal values for every state at every
-#                                     time, dimension S*T
-#         :return numpy.array policy: Optimal time-varying policy at every state,
-#                                     dimension S*T
-#     """
-#     # The value itearation algorithm requires the knowledge of :
-#     # - Transition probabilities
-#     # - Rewards
-#     # - State space
-#     # - Action space
-#     # - The finite horizon
-#     p         = env.transition_probabilities;
-#     r         = env.rewards;
-#     n_states  = env.n_states;
-#     n_actions = env.n_actions;
-#     print(n_actions)
-
-#     # Required variables and temporary ones for the VI to run
-#     V   = np.zeros(n_states);
-#     Q   = np.zeros((n_states, n_actions));
-#     BV  = np.zeros(n_states);
-#     # Iteration counter
-#     n   = 0
-#     Vs = []
-#     n_visits = np.zeros((n_states, n_actions))
-#     for _ in range(num_episodes):
-#         t = 0
-#         s = env.map[start]
-
-#         Vs.append(np.max(Q[s, :]))
-
-#         if n % 10000 == 0:
-#             print(f"Iteration ", n)
-
-#         # epsilon greedy policy
-#         if random.uniform(0,1) < epsilon:
-#             a = random.randint(0,4)
-#         else:
-#             a = np.argmax(Q[s,:])
-#         prev_s = -1
-#         # while True:
-#         while t < 200:
-#             V = np.copy(BV);
-            
-#             # if env.states[s][0:2] == (6,5) and env.states[s][4] == 1:
-#             #     # print("success")
-#             #     # exit()
-#             #     break
-#             # elif env.states[s][0:2] == env.states[s][2:4]:
-#             #     # print("lost")
-#             #     # exit()
-#             #     break
-#             # if prev_s == s:
-#             #     print("break", env.states[s])
-#             #     break
-#             # else:
-#             next_states = env.move(s,a)
-#             # next_states = env.__move()
-#             next_s = random.choice(next_states)
-            
-#             # epsilon greedy policy
-#             if random.uniform(0,1) < epsilon:
-#                 next_a = random.randint(0,4)
-#             else:
-#                 next_a = np.argmax(Q[s,:])
-            
-#             n_visits[s,a] += 1
-#             step_size = 1/(n_visits[s,a]**(2/3))
-
-#             Q[s, a] = Q[s, a] + step_size * (r[s, a] + gamma*Q[next_s,next_a] - Q[s, a])
-
-#             if env.maze[env.states[s][0:2]] == 2 and env.states[s][4] == 1:
-#                 # print(Q[env.map[start],:])
-#                 # print("success")
-#                 # exit()
-#                 break
-#             elif env.states[s][0:2] == env.states[s][2:4]:
-#                 # print("lost")
-#                 # exit()
-#                 break
-        
-#             t += 1
-#             prev_s = s
-#             s = next_s
-#             a = next_a
-#             BV = np.max(Q, 1);
-#         n += 1
-#     # Compute policy
-#     policy = np.argmax(Q,1);
-#     # Return the obtained policy
-#     return V, policy, Vs, Q;
 
 def value_iteration(env, gamma, epsilon):
     """ Solves the shortest path problem using value iteration

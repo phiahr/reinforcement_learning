@@ -81,7 +81,7 @@ if __name__ == '__main__':
     ])
 
     # Create an environment maze
-    env = mz.Maze(maze, minotaur_stay=True)
+    env = mz.Maze(maze, minotaur_stay=False)
     # env.show()
 
     # Finite horizon
@@ -114,7 +114,7 @@ if __name__ == '__main__':
         success_cnt = 0
          # Solve the MDP problem with dynamic programming
         V, policy= mz.dynamic_programming(env,i);
-        for _ in range(10000):
+        for _ in range(1000):
             path = env.simulate(start, policy, method);
             if path[-1][0:2] == (6,5):
                 success_cnt += 1
