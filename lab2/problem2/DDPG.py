@@ -1,3 +1,6 @@
+# Reinforcement Learning Problem 1
+# Oscar Eriksson, 0011301991, oscer@kth.se
+# Philip Ahrendt, 960605R119, pcah@kth.se
 # Load packages
 import numpy as np
 import torch
