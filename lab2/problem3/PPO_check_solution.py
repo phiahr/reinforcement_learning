@@ -57,7 +57,7 @@ for i in EPISODES:
     EPISODES.set_description("Episode {}".format(i))
     # Reset enviroment data
     done = False
-    state = env.reset()
+    state, _ = env.reset()
     total_episode_reward = 0.
     while not done:
         # Get next state and reward.  The done variable
@@ -67,7 +67,7 @@ for i in EPISODES:
         mu = mu.detach().numpy()
         std = torch.sqrt(var).detach().numpy()
         actions = np.clip(np.random.normal(mu, std), -1, 1).flatten()
-        next_state, reward, done, _ = env.step(actions)
+        next_state, reward, done, _, _ = env.step(actions)
 
         # Update episode reward
         total_episode_reward += reward
