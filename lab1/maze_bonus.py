@@ -122,8 +122,6 @@ class Maze:
         # Caught by the minotaur
         if self.states[state][0] == self.states[state][2] and self.states[state][1] == self.states[state][3]:
             return [state]
-        if self.maze[self.states[state][0:2]] == 2:
-            return [state]
 
         # Compute the future position given current (state, action)
         row = self.states[state][0] + self.actions[action][0]
@@ -281,13 +279,6 @@ class Maze:
             # Add the position in the maze corresponding to the next state
             # to the path
 
-            # with probability 1/30 the player will die from poison
-            dead_from_poison = False
-            # if random.randint(1,30) == 1:
-            #     dead_from_poison = True
-
-
-            # if not dead_from_poison:
             # walk 0.35 towards player
             if self.MOVE_TO_PLAYER:
                 points = [self.states[s] for s in next_states]
@@ -302,39 +293,15 @@ class Maze:
                     next_s = det_state
                 else:
                     next_s = random.choice(next_states)
-                # for index, next_s in enumerate(next_states):
-                    # the minotaur moves with probability 35% towards you and with probability 65% uniformly at random in all directions
-                    # if len(next_states)>1:
-                    #     if index == index_of_closest_point:
-                    #         transition_probabilities[next_s, s, a] = 0.35
-                    #     else:
-                    #         transition_probabilities[next_s, s, a] = (1/(len(next_states)-1))*0.65
-                    # else:
-                    #     transition_probabilities[next_s, s, a] = 1
             else:
                 next_s = random.choice(next_states)
-            # next_s = random.choices(next_s, weights=)
-            # else:
-            #     next_s = start
             path.append(self.states[next_s]);
             # Loop while state is not the goal state
             t_death = 50
-            distribution = np.arange(50)
             while s != next_s and t < 200:
                 # Update state
                 s = next_s;
-                # Move to next state given the policy and the current state
-                # if random.randint(1,50) == 1:
-                if np.random.random() < 1/50:
-                # if random.random() <= 0.005:
-                # if random.choice(distribution) == 0:
-                    # dead_from_poison = True
-                    t_death = t
-                #     print("dead from poison")
-                    # break
-
-                if not dead_from_poison:
-                    next_states = self.__move(s,policy[s]);
+                next_states = self.__move(s,policy[s]);
                 # Add the position in the maze corresponding to the next state
                 # to the path
                 if self.MOVE_TO_PLAYER:
@@ -505,7 +472,7 @@ def q_learning(env, start, gamma, epsilon, alpha, num_episodes, Q_Hot = None):
     # Return the obtained policy
     return V, policy, Vs, Q;
 
-def sarsa(env, start, gamma, epsilon, alpha, num_episodes, decreasing_epsilon=False):
+def sarsa(env, start, gamma, epsilon, alpha, num_episodes, decreasing_epsilon=False, delta=0.55):
     """ Solves the shortest path problem using value iteration
         :input Maze env           : The maze environment in which we seek to
                                     find the shortest path.
@@ -539,7 +506,7 @@ def sarsa(env, start, gamma, epsilon, alpha, num_episodes, decreasing_epsilon=Fa
         s = env.map[start]
         
         if decreasing_epsilon and n > 0:
-            epsilon = 1/n**0.55
+            epsilon = 1/n**delta
 
         Vs.append(np.max(Q[s, :]))
 
@@ -721,14 +688,16 @@ def animate_solution(maze, path):
         grid.get_celld()[(path[i][2:4])].get_text().set_text('Minotaur')
         
         if i > 0:
-            if path[i][:2] == path[i-1][:2] and path[i][4] == 1:
+            if path[i][:2] == (6,5) and path[i][4] == 1:
                 grid.get_celld()[(path[i][:2])].set_facecolor(LIGHT_GREEN)
                 grid.get_celld()[(path[i][:2])].get_text().set_text('Player is out')
                 grid.get_celld()[(path[i][2:4])].set_facecolor(col_map[maze[path[i][2:4]]])
                 grid.get_celld()[(path[i][2:4])].get_text().set_text('')
             elif path[i][:2] == path[i-1][:2]:
                 # grid.get_celld()[(path[i][2:4])].set_facecolor(col_map[maze[path[i][2:4]]])
-                grid.get_celld()[(path[i][2:4])].get_text().set_text('Wait')
+                grid.get_celld()[(path[i][:2])].get_text().set_text('Wait')
+                grid.get_celld()[(path[i-1][2:4])].set_facecolor(col_map[maze[path[i-1][2:4]]])
+                grid.get_celld()[(path[i-1][2:4])].get_text().set_text('')
             else:
                 grid.get_celld()[(path[i-1][:2])].set_facecolor(col_map[maze[path[i-1][:2]]])
                 grid.get_celld()[(path[i-1][:2])].get_text().set_text('')
